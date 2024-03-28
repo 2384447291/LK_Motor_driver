@@ -6,6 +6,8 @@ import time
 import queue
 from enum import Enum
 import sys
+#导入全局数据
+from Global_variable import global_is_need_reset_zero
 
 class Step(Enum):
     checking_head = 0
@@ -96,6 +98,7 @@ class CanMsgCenter():
         self.num_motor += 1
             
     def UpdateMassage(self,_interface):
+        #扭矩真用不到吧
         # #按理来说不该放在这里，但是无所谓了反正不做通用处理,统一扭矩的处理，暂时不用
         # if self.need_send_torque_message == True:
         #     canid = 0x280
@@ -104,16 +107,14 @@ class CanMsgCenter():
         #     self.need_send_torque_message = False
         #真正的处理发送
         packettosend = 4
-
-
         ###########################在这里控制电机
-        for motor in self.registedmotor:
-            motor.motorcontrol(motor.control_p_des,motor.control_v_des,motor.control_v_limit,motor.control_torque)   
+        if not global_is_need_reset_zero:
+            for motor in self.registedmotor:
+                motor.motorcontrol(motor.control_p_des,motor.control_v_des,motor.control_v_limit,motor.control_torque)
+        if global_is_need_reset_zero:
+            packettosend = 1
+
         ###########################
-
-
-
-
         while not self.SendMsgQue.empty() and packettosend > 0:
             tempmsg = self.SendMsgQue.get()
             if tempmsg.data[0] != 0xA4:

@@ -4,6 +4,8 @@ from enum import Enum
 from Communication import canMsg
 from Communication import CanMsgCenter
 from Communication import global_CanMsgCenter
+#导入全局数据
+from Global_variable import global_is_need_reset_zero
 
 TORQUE_MIN = -2000
 TORQUE_MAX = 2000
@@ -40,15 +42,20 @@ class LKmotor(object):
         self.disable_motor()
         self.enable_motor()
         self.save_zero()
+        ###在这里清零
+        ###############################
+        if global_is_need_reset_zero:
+            self.set_zero()
+            self.set_zero()
+            self.set_zero()
+            print('yes')
+        ###############################
         self.write_PID(100,100,40,14,50,50)
         self.read_PID()
 
 
 
-        ####在这里清零
-        ################################
-        # self.set_zero()
-        ################################
+
 
 
 

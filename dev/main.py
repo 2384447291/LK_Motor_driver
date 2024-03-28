@@ -20,9 +20,20 @@ from threading import Thread,Lock
 import threading
 import time
 
+#记录数据
+import csv
+
+#计算频率
+frequencyA = 0
+frequencyB = 0
+frequencynum = 0
+freq_every = 0
+
 #挂墙时钟
 t0 = 0.0
 dt= 0.0001
+last_sample_time = 0
+have_head = False
 
 # 机器人参数和规划器
 arg=np.mat([0,100,100,0,0,20.49])       # 机器人参数 = [link1 link2 link3 j1bias j2bias j3bias]
@@ -32,25 +43,30 @@ di=1800
 pll=Planer.testlineplaner(Planer.finger_v2_ik(arg),n2)
 # rpll=Planer.resetplaner(pll.getJointAng(1),n1)
 
+#是否需要打开图像
+is_need_plot = False  
+is_need_check_freq = False
+is_need_save_data = True
+sample_time = 0.01
+
+
+#定义电机(注册4个以上电机UI会爆，懒得修了，你自己手动改吧)=============================
+Motor1 = Motor.LKmotor(1,MotorMode["POS_MODE"])
+Motor2 = Motor.LKmotor(2,MotorMode["POS_MODE"])
+Motor3 = Motor.LKmotor(3,MotorMode["POS_MODE"])
+
+data_file_name = "sblcs.csv"
 
 def Motor_control_thread(_interface):
     while True:
-        #虚假的1ms（差不多得了，到时候有时序要求，上linux或者单片机吧）
-        # time.sleep(0.01)
-        #收发信息的驱动
-        is_sending = global_CanMsgCenter.UpdateMassage(_interface)
-        global_CanMsgCenter.RecieveMassage(_interface)   
-#在这里写代码//不要动t0很危险
-#------------------------------------------------------------------------------s-----------------------------        
-#-----------------------------------------------------------------------------------------------------------  
-#-----------------------------------------------------------------------------------------------------------  
-#-----------------------------------------------------------------------------------------------------------  
+        #在这里写代码//不要动t0很危险
+        #------------------------------------------------------------------------------s-----------------------------        
+        #-----------------------------------------------------------------------------------------------------------  
+        #-----------------------------------------------------------------------------------------------------------  
+        #-----------------------------------------------------------------------------------------------------------  
         #运动算法组件  
-        global Motor1,Motor2,Motor3        
-        # global Motor1          
+        global Motor1,Motor2,Motor3                 
         i=(int)((time.time()-t0)/dt)
-
-
         if i>0 and i<=n1:
             Motor1.set(pll.getJointAng(1)[0,0],1)
             Motor2.set(pll.getJointAng(1)[0,1],1)
@@ -59,22 +75,76 @@ def Motor_control_thread(_interface):
             Motor1.set(pll.getJointAng(i-n1+di)[0,0],np.abs((pll.getJointAng(i-n1)[0,0]-pll.getJointAng(i+1-n1)[0,0])/dt-0.001))
             Motor2.set(pll.getJointAng(i-n1+di)[0,1],np.abs((pll.getJointAng(i-n1)[0,1]-pll.getJointAng(i+1-n1)[0,1])/dt-0.001))
             Motor3.set(pll.getJointAng(i-n1+di)[0,2],np.abs((pll.getJointAng(i-n1)[0,2]-pll.getJointAng(i+1-n1)[0,2])/dt-0.001))
-
         # #============================复位用======================
-        # global Motor1
-        # Motor1.set(0,6)
+        # global Motor3
+        # Motor3.set(0,6)
+        #在这里写代码
+        #-----------------------------------------------------------------------------------------------------------        
+        #-----------------------------------------------------------------------------------------------------------  
+        #-----------------------------------------------------------------------------------------------------------  
+        #----------------------------------------------------------------------------------------------------------- 
+            
 
 
-#在这里写代码
-#-----------------------------------------------------------------------------------------------------------        
-#-----------------------------------------------------------------------------------------------------------  
-#-----------------------------------------------------------------------------------------------------------  
-#----------------------------------------------------------------------------------------------------------- 
+
+
+
+
+
+
+
+        global frequencyB, frequencyA, freq_every, frequencynum 
+        frequencyB = frequencyA
+        frequencyA = time.time()
+        if frequencyA != frequencyB:
+            freq = 1/(frequencyA - frequencyB)
+            frequencynum = frequencynum+1
+            freq_every = freq_every + freq 
+        freq = freq_every/frequencynum 
+        if is_need_check_freq:
+            print(freq)
+        #收发信息的驱动
+        is_sending = global_CanMsgCenter.UpdateMassage(_interface)
+        global_CanMsgCenter.RecieveMassage(_interface)   
+        global last_sample_time
+        if is_need_save_data:
+            global have_head
+            if not have_head:
+                header = ['time']
+                number = 1
+                for motor in global_CanMsgCenter.registedmotor:
+                    str1 = 'M' + str(number) + ' ctrl_p'
+                    str2 = 'M' + str(number) + ' fdb_pos'
+                    str3 = 'M' + str(number) + ' ctrl_v'
+                    str4 = 'M' + str(number) + ' fdb_v'
+                    str5 = 'M' + str(number) + ' ctrl_tff'
+                    str6 = 'M' + str(number) + ' fdb_tff'
+                    header.append(str1)
+                    header.append(str2)
+                    header.append(str3)
+                    header.append(str4)
+                    header.append(str5)
+                    header.append(str6)
+                    number += 1
+                with open(data_file_name, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(header)
+                have_head = True
+            if time.time()- t0 - last_sample_time > sample_time:
+                with open(data_file_name,'a+') as f:
+                    csv_write = csv.writer(f)
+                    data_row = np.zeros((1,1),np.float64) 
+                    data_row = time.time()-t0
+                    for motor in global_CanMsgCenter.registedmotor:
+                        data_row = np.append(data_row,[motor.control_p_des,motor.feedback_pos,
+                                        motor.control_v_des,motor.feedback_vec,
+                                        motor.control_torque,motor.feedback_torque])
+                    csv_write.writerow(data_row)
+                last_sample_time = time.time()- t0
 #数据采样组件
 def update_data():
     while True:
-        #虚假的1ms（差不多得了，到时候有时序要求，上linux或者单片机吧）
-        # time.sleep(0.01)
+        time.sleep(0.01)
         global time_mem,data_mem,t0
         global global_CanMsgCenter
         #更新数据    
@@ -136,49 +206,39 @@ if __name__ == '__main__' :
     t0 = time.time()
     #定义USB
     m_USB = USB2CAN()
-
-
-    #定义电机(注册4个以上电机UI会爆，懒得修了，你自己手动改吧)=============================
-    Motor1 = Motor.LKmotor(1,MotorMode["POS_MODE"])
-    Motor2 = Motor.LKmotor(2,MotorMode["POS_MODE"])
-    Motor3 = Motor.LKmotor(3,MotorMode["POS_MODE"])
-    
-    #开启电机控制线程
-    Motor_threading=threading.Thread(target=Motor_control_thread,args=[m_USB],name='Motor_control_thread')
-    Motor_threading.daemon = True
-    Motor_threading.start()    
-
-
-
-
-
-
-    #---------------------------------------------------画图----------------------------------------------
-    #开启数据更新线程
-    Data_update_threading=threading.Thread(target=update_data,name='Update_data_thread')
-    Data_update_threading.daemon = True
-    Data_update_threading.start()      
-    #绘图主线程
-    data_mem = np.zeros((global_CanMsgCenter.num_motor*6,1),np.float64) 
-    time_mem = np.zeros((1,1),np.float64) 
-    datalock = Lock()
-    root = Tk()
-    root.title("Set title")
-    root.geometry('1000x500')
-    
-    """
-    图像画布设置
-    """
-    panel = Label(root)  # initialize image panel
-    panel.place(x=0,y=0,anchor='nw')
-    root.config(cursor="arrow")
-    
-    matplotlib.use('TkAgg')
-    f = Figure(figsize=(7, 5/(5-global_CanMsgCenter.num_motor)), dpi=130)
-    canvas = FigureCanvasTkAgg(f, master=root)
-    canvas.draw()
-    canvas.get_tk_widget().place(x=0,y=0 ,anchor='nw')
-    video_loop()
-    root.mainloop()
-    #---------------------------------------------------画图----------------------------------------------
+    if is_need_plot:
+        #开启电机控制线程
+        Motor_threading=threading.Thread(target=Motor_control_thread,args=[m_USB],name='Motor_control_thread')
+        Motor_threading.daemon = True
+        Motor_threading.start()    
+        #---------------------------------------------------画图----------------------------------------------
+        #开启数据更新线程
+        Data_update_threading=threading.Thread(target=update_data,name='Update_data_thread')
+        Data_update_threading.daemon = True
+        Data_update_threading.start()      
+        #绘图主线程
+        data_mem = np.zeros((global_CanMsgCenter.num_motor*6,1),np.float64) 
+        time_mem = np.zeros((1,1),np.float64) 
+        datalock = Lock()
+        root = Tk()
+        root.title("Set title")
+        root.geometry('1000x500')
+        
+        """
+        图像画布设置
+        """
+        panel = Label(root)  # initialize image panel
+        panel.place(x=0,y=0,anchor='nw')
+        root.config(cursor="arrow")
+        
+        matplotlib.use('TkAgg')
+        f = Figure(figsize=(7, 5/(5-global_CanMsgCenter.num_motor)), dpi=130)
+        canvas = FigureCanvasTkAgg(f, master=root)
+        canvas.draw()
+        canvas.get_tk_widget().place(x=0,y=0 ,anchor='nw')
+        video_loop()
+        root.mainloop()
+        #---------------------------------------------------画图----------------------------------------------
+    else:
+        Motor_control_thread(m_USB)
         
